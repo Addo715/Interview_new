@@ -1,4 +1,4 @@
-// src/routes/interviewRoutes.js
+// server/routes/interviewRoutes.js
 import express from 'express';
 import {
   initializeInterview,
@@ -12,10 +12,12 @@ import {
 
 const router = express.Router();
 
-// 1. Initialize interview session
+// 1. Initialize interview session (frontend calls /interview/start)
+router.post('/start', initializeInterview);
 router.post('/initialize', initializeInterview);
 
-// 2. Process live recruiter question → get AI answer suggestion (REAL-TIME)
+// 2. Process live transcript → get AI answer (REAL-TIME)
+router.post('/transcript', processRecruiterQuestion);
 router.post('/question', processRecruiterQuestion);
 
 // 3. Save what the candidate actually said (optional)

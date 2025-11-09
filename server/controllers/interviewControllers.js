@@ -1,13 +1,12 @@
-// src/controllers/interviewControllers.js
+// server/controllers/interviewControllers.js
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import promptTemplate from '../lib/prompt.js'; // This is your 3000-line masterpiece
+import promptTemplate from '../lib/prompt.js';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_SECRET_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' }); // or gemini-1.5-flash for speed
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 const interviewSessions = new Map();
 
-// Helper: Replace placeholders in the master prompt
 const generateInterviewAssistantPrompt = ({
   company,
   position,
@@ -25,28 +24,6 @@ const generateInterviewAssistantPrompt = ({
     .replace(/{uploadedDocumentContent}/g, uploadedDocumentContent || 'No resume uploaded.');
 };
 
-// Format the recruiter's live question
-const formatQuestionForAI = (question) => {
-  return `The recruiter just asked: "${question}"\n\nProvide a concise, natural, first-person answer the candidate can say right now. Follow the exact formatting rules from the prompt.`;
-};
-
-// Add conversation context (last 3 exchanges)
-const createInterviewContext = (conversationHistory) => {
-  if (conversationHistory.length === 0) return '';
-  const recent = conversationHistory.slice(-3);
-  return (
-    `PREVIOUS EXCHANGES (for context only):\n` +
-    recent
-      .map(
-        (item, i) =>
-          `${i + 1}. Q: ${item.question}\n   A: ${item.candidateSpoke || item.aiSuggestion}`
-      )
-      .join('\n\n') +
-    '\n\nNow answer the new question:\n'
-  );
-};
-
-// Validation
 const validateCandidateData = (data) => {
   const errors = [];
   if (!data.company) errors.push('Company name is required');
@@ -58,8 +35,7 @@ const validateCandidateData = (data) => {
 // 1. Initialize Interview
 export const initializeInterview = async (req, res) => {
   try {
-    const { company, position, objectives, codingLanguage, uploadedDocumentContent, interviewType } =
-      req.body;
+    const { company, position, objectives, codingLanguage, uploadedDocumentContent, interviewType } = req.body;
 
     const validation = validateCandidateData({ company, position, objectives });
     if (!validation.isValid) {
@@ -88,60 +64,84 @@ export const initializeInterview = async (req, res) => {
 
     interviewSessions.set(sessionId, sessionData);
 
-    console.log('Interview session started:', sessionId);
+    console.log('✅ Interview session started:', sessionId);
     res.status(200).json({
       success: true,
       sessionId,
       message: 'Ready! Send recruiter questions in real-time.',
     });
   } catch (error) {
-    console.error('Init error:', error);
+    console.error('❌ Init error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// 2. Process Recruiter Question (REAL-TIME)
+// 2. Process Recruiter Question (REAL-TIME) - FIXED
 export const processRecruiterQuestion = async (req, res) => {
   try {
-    const { sessionId, question } = req.body;
+    const { sessionId, transcript, lastUserMessage } = req.body;
 
-    if (!question || question.trim() === '') {
-      return res.status(400).json({ success: false, message: 'Question is empty' });
+    console.log('📥 Received request:', { sessionId, lastUserMessage });
+
+    // Check if message is empty
+    if (!lastUserMessage || lastUserMessage.trim() === '') {
+      console.log('⚠️ Empty message, skipping');
+      return res.status(200).json({ 
+        success: true, 
+        aiResponse: null,
+        shouldAskQuestion: null 
+      });
     }
 
+    // Check session exists
     const session = interviewSessions.get(sessionId);
     if (!session) {
+      console.error('❌ Session not found:', sessionId);
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
 
-    const formattedQuestion = formatQuestionForAI(question);
-    const context = createInterviewContext(session.conversationHistory);
+    console.log('✅ Session found for:', sessionId);
 
-    const completePrompt = `${session.aiPrompt}\n\n${context}${formattedQuestion}`;
+    // Create prompt for Gemini
+    const formattedQuestion = `The recruiter just asked: "${lastUserMessage}"\n\nProvide a concise, natural, first-person answer the candidate can say right now. Keep it brief (2-3 sentences).`;
+    
+    const completePrompt = `${session.aiPrompt}\n\n${formattedQuestion}`;
 
-    console.log('Sending to Gemini...');
+    console.log('🤖 Sending to Gemini AI...');
+    console.log('Question:', lastUserMessage);
+
+    // Call Gemini API
     const result = await model.generateContent(completePrompt);
     const response = await result.response;
     const aiResponse = response.text();
 
+    console.log('✅ Gemini response:', aiResponse);
+
     // Save to history
     session.conversationHistory.push({
       timestamp: new Date(),
-      question,
+      question: lastUserMessage,
       aiSuggestion: aiResponse,
     });
     interviewSessions.set(sessionId, session);
 
+    // Return response
     res.status(200).json({
       success: true,
-      sessionId,
-      recruiterQuestion: question,
-      aiAnswerSuggestion: aiResponse.trim(),
-      message: 'Speak this naturally!',
+      aiResponse: aiResponse.trim(),
+      shouldAskQuestion: null
     });
+
+    console.log('✅ Response sent to frontend');
+
   } catch (error) {
-    console.error('Gemini error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error('❌ Gemini error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message,
+      error: error.toString()
+    });
   }
 };
 

@@ -1,6 +1,7 @@
+// client/src/Components/Interview.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import api from '../api/api'; // Make sure path is correct
+import api from '../api/api';
 
 const Interview = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -12,23 +13,102 @@ const Interview = () => {
   const [sessionId, setSessionId] = useState(null);
 
   const lastProcessedTranscript = useRef('');
+  const isProcessingRef = useRef(false);
   const location = useLocation();
 
   useEffect(() => {
     if (location.state?.sessionId) {
       setSessionId(location.state.sessionId);
+      console.log('✅ Session ID loaded:', location.state.sessionId);
+    } else {
+      console.error('❌ No session ID found!');
     }
   }, [location]);
 
+  const sendToGemini = async (userText) => {
+    if (isProcessingRef.current) {
+      console.log('⏳ Already processing, skipping...');
+      return;
+    }
+
+    if (!sessionId) {
+      console.error('❌ No sessionId available');
+      return;
+    }
+
+    isProcessingRef.current = true;
+
+    try {
+      console.log('📤 Sending to Gemini:', userText);
+      
+      const res = await api.post('/interview/transcript', {
+        sessionId,
+        transcript: transcript + userText,
+        lastUserMessage: userText
+      });
+
+      console.log('✅ Gemini response received:', res.data);
+
+      if (res.data.aiResponse) {
+        const aiMessage = {
+          id: Date.now() + Math.random(),
+          text: res.data.aiResponse,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+          })
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
+        console.log('💬 AI message added to chat');
+      } else {
+        console.log('⚠️ No AI response in data');
+      }
+    } catch (err) {
+      console.error('❌ Gemini API Error:', err);
+      console.error('Error details:', err.response?.data);
+      
+      // Show error message in chat
+      const errorMessage = {
+        id: Date.now() + Math.random(),
+        text: '❌ Error getting AI response. Please check console.',
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit' 
+        })
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      isProcessingRef.current = false;
+    }
+  };
+
   const handleStartRecording = async () => {
     try {
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      if (!sessionId) {
+        alert('❌ No session ID found. Please go back and start again.');
+        return;
+      }
+
+      console.log('🎥 Starting screen recording...');
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: true, 
+        audio: true 
+      });
       setMediaStream(displayStream);
       setIsRecording(true);
 
+      console.log('🎤 Requesting microphone access...');
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
       if (SpeechRecognition) {
         const recognitionInstance = new SpeechRecognition();
         recognitionInstance.continuous = true;
@@ -44,54 +124,41 @@ const Interview = () => {
 
             if (event.results[i].isFinal) {
               finalTranscript += transcriptPiece + ' ';
+              
+              console.log('🎙️ Final transcript:', transcriptPiece.trim());
 
+              // Add user message
               const newMessage = {
                 id: Date.now(),
                 text: transcriptPiece.trim(),
                 sender: 'user',
-                timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                timestamp: new Date().toLocaleTimeString('en-US', { 
+                  hour12: false, 
+                  hour: '2-digit', 
+                  minute: '2-digit', 
+                  second: '2-digit' 
+                })
               };
-              setMessages(prev => [...prev, newMessage]);
+              
+              setMessages(prev => {
+                // Remove interim messages
+                const filtered = prev.filter(msg => !msg.isInterim);
+                return [...filtered, newMessage];
+              });
+
+              // Update transcript
               setTranscript(prev => prev + transcriptPiece + ' ');
 
-              // GEMINI AUTO-REPLY HERE
-              const currentFullTranscript = transcript + transcriptPiece + ' ';
-              if (sessionId && currentFullTranscript.trim() !== lastProcessedTranscript.current.trim()) {
-                lastProcessedTranscript.current = currentFullTranscript.trim();
-
-                api.post('/interview/transcript', {
-                  sessionId,
-                  transcript: currentFullTranscript.trim(),
-                  lastUserMessage: transcriptPiece.trim()
-                })
-                .then(res => {
-                  const { aiResponse, shouldAskQuestion } = res.data;
-
-                  if (aiResponse) {
-                    const aiMessage = {
-                      id: Date.now() + Math.random(),
-                      text: aiResponse,
-                      sender: 'ai',
-                      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    };
-                    setMessages(prev => [...prev, aiMessage]);
-                  }
-
-                  if (shouldAskQuestion) {
-                    setTimeout(() => {
-                      const questionMsg = {
-                        id: Date.now() + 1,
-                        text: shouldAskQuestion,
-                        sender: 'ai',
-                        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                      };
-                      setMessages(prev => [...prev, questionMsg]);
-                    }, 2000);
-                  }
-                })
-                .catch(err => console.error("Gemini failed:", err));
+              // AUTO SEND TO GEMINI - This is the key part!
+              const trimmedText = transcriptPiece.trim();
+              if (trimmedText && trimmedText !== lastProcessedTranscript.current) {
+                lastProcessedTranscript.current = trimmedText;
+                console.log('🤖 Triggering Gemini API call...');
+                sendToGemini(trimmedText);
               }
+
             } else {
+              // Show interim results
               interimTranscript += transcriptPiece;
               if (interimTranscript.trim()) {
                 setMessages(prev => {
@@ -100,7 +167,12 @@ const Interview = () => {
                     id: 'interim-' + Date.now(),
                     text: interimTranscript.trim() + '...',
                     sender: 'user',
-                    timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                    timestamp: new Date().toLocaleTimeString('en-US', { 
+                      hour12: false, 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit' 
+                    }),
                     isInterim: true
                   }];
                 });
@@ -109,22 +181,51 @@ const Interview = () => {
           }
         };
 
-        recognitionInstance.onerror = (e) => console.error('Speech error:', e.error);
-        recognitionInstance.onend = () => { if (isRecording) recognitionInstance.start(); };
+        recognitionInstance.onerror = (e) => {
+          console.error('❌ Speech recognition error:', e.error);
+          if (e.error === 'no-speech') {
+            console.log('⏸️ No speech detected, continuing...');
+          } else if (e.error === 'aborted') {
+            console.log('⏹️ Recognition aborted');
+          }
+        };
+        
+        recognitionInstance.onend = () => { 
+          if (isRecording) {
+            console.log('🔄 Recognition ended, restarting...');
+            try {
+              recognitionInstance.start();
+            } catch (e) {
+              console.error('Error restarting recognition:', e);
+            }
+          }
+        };
+        
         recognitionInstance.start();
+        console.log('✅ Speech recognition started successfully');
         setRecognition(recognitionInstance);
+        
       } else {
-        alert('Speech recognition not supported. Use Chrome/Edge.');
+        alert('❌ Speech recognition not supported. Please use Chrome or Edge browser.');
       }
     } catch (error) {
-      alert('Error: ' + error.message);
+      console.error('❌ Recording error:', error);
+      alert('Error starting recording: ' + error.message);
     }
   };
 
   const handleStopRecording = () => {
-    if (recognition) { recognition.stop(); setRecognition(null); }
-    if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); setMediaStream(null); }
+    console.log('⏹️ Stopping recording...');
+    if (recognition) { 
+      recognition.stop(); 
+      setRecognition(null); 
+    }
+    if (mediaStream) { 
+      mediaStream.getTracks().forEach(t => t.stop()); 
+      setMediaStream(null); 
+    }
     setIsRecording(false);
+    console.log('✅ Recording stopped');
   };
 
   const handleSendMessage = () => {
@@ -133,10 +234,17 @@ const Interview = () => {
         id: Date.now(),
         text: inputMessage,
         sender: 'user',
-        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
       };
       setMessages([...messages, newMessage]);
       setInputMessage('');
+      
+      // Also send manual message to Gemini
+      sendToGemini(inputMessage.trim());
     }
   };
 
@@ -147,7 +255,6 @@ const Interview = () => {
     }
   };
 
-  // UI 100% unchanged
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
@@ -202,7 +309,7 @@ const Interview = () => {
             {isRecording && (
               <div className="flex items-center gap-2 text-red-500">
                 <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-                <span className="text-sm">Live Recording</span>
+                <span className="text-sm">Live Recording - Speak and Gemini will respond automatically</span>
               </div>
             )}
           </div>
@@ -242,7 +349,13 @@ const Interview = () => {
             </div>
             {isRecording && (
               <div className="mt-4 p-3 bg-gray-700 rounded-lg">
-                <p className="text-xs text-gray-300">Speak now to see your transcript appear on the left</p>
+                <p className="text-xs text-gray-300">✅ Speak now - Gemini AI will respond automatically after each question!</p>
+              </div>
+            )}
+            {sessionId && (
+              <div className="mt-4 p-3 bg-green-900 rounded-lg">
+                <p className="text-xs text-green-300">✅ Connected to AI</p>
+                <p className="text-xs text-gray-400 mt-1">Session: {sessionId.slice(-8)}</p>
               </div>
             )}
           </div>

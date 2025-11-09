@@ -1,6 +1,7 @@
+// client/src/Components/Forms.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/api'; // Make sure this path is correct
+import api from '../api/api';
 
 const Forms = () => {
   const navigate = useNavigate();
@@ -51,6 +52,10 @@ const Forms = () => {
   };
 
   const handleStart = async () => {
+    console.log('Start button clicked');
+    console.log('Form data:', formData);
+    console.log('Mic enabled:', micEnabled);
+
     if (!formData.company || !formData.position || !formData.objectives) {
       alert('Please fill in Company, Position, and Objectives fields');
       return;
@@ -71,9 +76,19 @@ const Forms = () => {
         interviewType: activeTab
       };
 
+      console.log('Sending to backend:', interviewData);
+
       // Call backend to start session with Gemini
       const response = await api.post('/interview/start', interviewData);
+      console.log('Backend response:', response.data);
+      
       const { sessionId } = response.data;
+
+      if (!sessionId) {
+        throw new Error('No sessionId received from backend');
+      }
+
+      console.log('Navigating to interview with sessionId:', sessionId);
 
       navigate('/interview', {
         state: {
@@ -89,13 +104,13 @@ const Forms = () => {
       });
     } catch (error) {
       console.error('Error starting interview:', error);
-      alert('Failed to connect to AI server. Is backend running?');
+      console.error('Error details:', error.response?.data);
+      alert('Failed to connect to AI server. Error: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoading(false);
     }
   };
 
-  // UI remains 100% unchanged
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-6">
       <div className="w-full max-w-2xl bg-white rounded-lg shadow-2xl p-8">
@@ -111,22 +126,21 @@ const Forms = () => {
             <div><label htmlFor="company" className="block text-sm font-medium text-black mb-2">Company *</label><input type="text" id="company" name="company" value={formData.company} onChange={handleInputChange} className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black" placeholder="Enter company name" required /></div>
             <div><label htmlFor="position" className="block text-sm font-medium text-black mb-2">Position *</label><input type="text" id="position" name="position" value={formData.position} onChange={handleInputChange} className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black" placeholder="Enter position" required /></div>
             <div><label htmlFor="objectives" className="block text-sm font-medium text-black mb-2">Objectives *</label><textarea id="objectives" name="objectives" value={formData.objectives} onChange={handleInputChange} rows="4" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black resize-none" placeholder="Enter your objectives" required /></div>
-            <div><label className="block text-sm font-medium text-black mb-2">Upload Document (Resume/CV)</label><div className="relative"><input type="file" id="fileUpload" onChange={handleFileUpload} accept=".txt,.pdf,.doc,.docx" className="hidden" /><label htmlFor="fileUpload" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors"><span className="text-black">{uploadedFile ? uploadedFile.name : 'Choose a file'}</span><span className="text-black text-xl">Document</span></label></div></div>
-            <button onClick={handleEnableMicrophone} className={`w-full px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${micEnabled ? 'bg-black text-white' : 'bg-white border-2 border-black text-black hover:bg-gray-50'}`}><span className="text-xl">Microphone</span>{micEnabled ? 'Microphone Enabled' : 'Enable Microphone Access'}</button>
-            <button onClick={handleStart} disabled={loading} className="w-full px-4 py-4 bg-black text-white rounded-lg font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400">{loading ? 'Starting...' : 'Start'} {!loading && <span className="text-xl">Right Arrow</span>}</button>
+            <div><label className="block text-sm font-medium text-black mb-2">Upload Document (Resume/CV)</label><div className="relative"><input type="file" id="fileUpload" onChange={handleFileUpload} accept=".txt,.pdf,.doc,.docx" className="hidden" /><label htmlFor="fileUpload" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors"><span className="text-black">{uploadedFile ? uploadedFile.name : 'Choose a file'}</span><span className="text-black text-xl">📄</span></label></div></div>
+            <button onClick={handleEnableMicrophone} className={`w-full px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${micEnabled ? 'bg-black text-white' : 'bg-white border-2 border-black text-black hover:bg-gray-50'}`}><span className="text-xl">🎤</span>{micEnabled ? 'Microphone Enabled' : 'Enable Microphone Access'}</button>
+            <button onClick={handleStart} disabled={loading} className="w-full px-4 py-4 bg-black text-white rounded-lg font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">{loading ? 'Starting...' : 'Start'} {!loading && <span className="text-xl">→</span>}</button>
           </div>
         )}
 
         {activeTab === 'coding' && (
           <div className="space-y-6">
-            {/* Same inputs as live tab + codingLanguage */}
             <div><label htmlFor="company-coding" className="block text-sm font-medium text-black mb-2">Company *</label><input type="text" id="company-coding" name="company" value={formData.company} onChange={handleInputChange} className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black" placeholder="Enter company name" required /></div>
             <div><label htmlFor="position-coding" className="block text-sm font-medium text-black mb-2">Position *</label><input type="text" id="position-coding" name="position" value={formData.position} onChange={handleInputChange} className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black" placeholder="Enter position" required /></div>
             <div><label htmlFor="objectives-coding" className="block text-sm font-medium text-black mb-2">Objectives *</label><textarea id="objectives-coding" name="objectives" value={formData.objectives} onChange={handleInputChange} rows="4" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black resize-none" placeholder="Enter your objectives" required /></div>
             <div><label htmlFor="codingLanguage" className="block text-sm font-medium text-black mb-2">Coding Language *</label><input type="text" id="codingLanguage" name="codingLanguage" value={formData.codingLanguage} onChange={handleInputChange} className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 text-black" placeholder="e.g., JavaScript, Python, Java" required /></div>
-            <div><label className="block text-sm font-medium text-black mb-2">Upload Document (Resume/CV)</label><div className="relative"><input type="file" id="fileUpload-coding" onChange={handleFileUpload} accept=".txt,.pdf,.doc,.docx" className="hidden" /><label htmlFor="fileUpload-coding" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors"><span className="text-black">{uploadedFile ? uploadedFile.name : 'Choose a file'}</span><span className="text-black text-xl">Document</span></label></div></div>
-            <button onClick={handleEnableMicrophone} className={`w-full px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${micEnabled ? 'bg-black text-white' : 'bg-white border-2 border-black text-black hover:bg-gray-50'}`}><span className="text-xl">Microphone</span>{micEnabled ? 'Microphone Enabled' : 'Enable Microphone Access'}</button>
-            <button onClick={handleStart} disabled={loading} className="w-full px-4 py-4 bg-black text-white rounded-lg font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400">{loading ? 'Starting...' : 'Start'} {!loading && <span className="text-xl">Right Arrow</span>}</button>
+            <div><label className="block text-sm font-medium text-black mb-2">Upload Document (Resume/CV)</label><div className="relative"><input type="file" id="fileUpload-coding" onChange={handleFileUpload} accept=".txt,.pdf,.doc,.docx" className="hidden" /><label htmlFor="fileUpload-coding" className="w-full px-4 py-3 bg-white border-2 border-black rounded-lg cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors"><span className="text-black">{uploadedFile ? uploadedFile.name : 'Choose a file'}</span><span className="text-black text-xl">📄</span></label></div></div>
+            <button onClick={handleEnableMicrophone} className={`w-full px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${micEnabled ? 'bg-black text-white' : 'bg-white border-2 border-black text-black hover:bg-gray-50'}`}><span className="text-xl">🎤</span>{micEnabled ? 'Microphone Enabled' : 'Enable Microphone Access'}</button>
+            <button onClick={handleStart} disabled={loading} className="w-full px-4 py-4 bg-black text-white rounded-lg font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">{loading ? 'Starting...' : 'Start'} {!loading && <span className="text-xl">→</span>}</button>
           </div>
         )}
       </div>

@@ -1,8 +1,10 @@
+
+// client/src/api/api.js
 import axios from "axios";
 
 const api = axios.create({
   baseURL: "http://localhost:3000/api",
-  withCredentials: true, // optional if you use cookies or JWT in headers
+  // REMOVED withCredentials to fix CORS error
 });
 
 export default api;
